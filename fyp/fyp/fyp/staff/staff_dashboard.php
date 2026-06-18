@@ -728,7 +728,7 @@ $recent_customers = mysqli_query($conn, "SELECT customer_id, name, email, create
     <div id="section-dashboard" class="content-section <?php echo ($active_section == 'dashboard') ? 'active' : ''; ?>" style="display: <?php echo ($active_section == 'dashboard') ? 'block' : 'none'; ?>;">
         <div class="row g-4 mb-4">
             <div class="col-md-3 d-flex">
-                <div class="stats-card w-100 h-100 d-flex flex-column justify-content-between" style="border-left-color: #0d6efd; cursor: pointer;" onclick="window.location.href='?active_section=customer'">
+                <div class="stats-card w-100 h-100 d-flex flex-column justify-content-between" style="border-left-color: #0d6efd; cursor: pointer;" onclick="window.location.href='?active_section=progress'">
                     <div>
                         <h6 class="text-muted text-uppercase fw-semibold mb-1">Ongoing Projects</h6>
                         <h2 class="fw-bold mb-0"><?= $ongoing_count ?></h2>
@@ -738,7 +738,7 @@ $recent_customers = mysqli_query($conn, "SELECT customer_id, name, email, create
                 </div>
             </div>
             <div class="col-md-3 d-flex">
-                <div class="stats-card w-100 h-100 d-flex flex-column justify-content-between" style="border-left-color: #198754; cursor: pointer;" onclick="window.location.href='?active_section=customer'">
+                <div class="stats-card w-100 h-100 d-flex flex-column justify-content-between" style="border-left-color: #198754; cursor: pointer;" onclick="window.location.href='?active_section=progress'">
                     <div>
                         <h6 class="text-muted text-uppercase fw-semibold mb-1">Completed Projects</h6>
                         <h2 class="fw-bold mb-0"><?= $completed_count ?></h2>
@@ -1693,7 +1693,7 @@ $recent_customers = mysqli_query($conn, "SELECT customer_id, name, email, create
                                                                 data-customer-id="<?= $cust_id ?>"
                                                                 data-action="reject">Reject</button>
                                                     <?php elseif ($status == 'Rejected'): ?>
-                                                        <button class="btn-action btn-sm" onclick="uploadForQuotationStage(<?= $qtn_id ?>, '<?= $stage_key ?>')">Re-upload</button>
+                                                        <span class="text-muted">Rejected</span>
                                                     <?php elseif ($status == 'Verified'): ?>
                                                         <a href="javascript:void(0);" onclick="showPage('invoice', null);" class="btn btn-sm btn-outline-info">Go to Invoice</a>
                                                     <?php elseif ($is_unlocked && !$record): ?>
@@ -2328,56 +2328,86 @@ $recent_customers = mysqli_query($conn, "SELECT customer_id, name, email, create
     }
 
     document.addEventListener('DOMContentLoaded', function() {
-        const ctx = document.getElementById('staffRevenueChart')?.getContext('2d');
-        if (ctx) {
-            let currentRange = 'monthly';
-            const chart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: chartDataSets.monthly.labels,
-                    datasets: [{
-                        label: 'Revenue (RM)',
-                        data: chartDataSets.monthly.values,
-                        borderColor: '#0d6efd',
-                        backgroundColor: 'rgba(13,110,253,0.1)',
-                        borderWidth: 2,
-                        fill: true,
-                        tension: 0.3,
-                        pointBackgroundColor: '#0d6efd',
-                        pointBorderColor: '#fff',
-                        pointRadius: 4
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: { position: 'top' },
-                        tooltip: { callbacks: { label: (ctx) => `RM ${ctx.raw.toFixed(2)}` } }
-                    },
-                    scales: {
-                        y: { beginAtZero: true, title: { display: true, text: 'Amount (RM)' } }
+        const progressSection = document.getElementById('section-progress');
+        if (!progressSection) return;
+
+        progressSection.addEventListener('click', function(e) {
+            const btn = e.target.closest('.mark-step-btn');
+            if (!btn) return;
+            const container = btn.parentElement;
+            const notesTextarea = container.querySelector('.step-notes');
+            if (!notesTextarea) {
+                alert('Error: Could not find notes input.');
+                return;
+            }
+            const qtnId = notesTextarea.dataset.qtnId;
+            const stepName = notesTextarea.dataset.step;
+            const staffId = notesTextarea.dataset.staffId;
+            const notes = notesTextarea.value.trim();
+            if (!qtnId || !stepName) {
+                alert('Missing data attributes.');
+                return;
+            }
+
+            const paymentSteps = ['Deposit 50%', '30% on going job', '20% complete job'];
+            let confirmMessage = `Mark "${stepName}" as Completed?`;
+            if (paymentSteps.includes(stepName)) {
+                confirmMessage = `WARNING: You are manually marking the payment step "${stepName}" as completed.\n\nThis will NOT automatically record any payment. Please ensure the customer has actually paid.\n\nAre you sure you want to continue?`;
+            }
+
+            if (confirm(confirmMessage)) {
+                fetch('', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: `action=mark_step_complete&qtn_id=${qtnId}&step_name=${encodeURIComponent(stepName)}&staff_id=${staffId}&notes=${encodeURIComponent(notes)}&manual=1`
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        location.reload();
+                    } else {
+                        alert('Update failed: ' + data.message);
                     }
-                }
-            });
-            document.querySelectorAll('.revenue-range').forEach(btn => {
-                btn.addEventListener('click', function() {
-                    const range = this.getAttribute('data-range');
-                    if (range === currentRange) return;
-                    document.querySelectorAll('.revenue-range').forEach(b => b.classList.remove('active'));
-                    this.classList.add('active');
-                    const newData = chartDataSets[range];
-                    if (newData) {
-                        chart.data.labels = newData.labels;
-                        chart.data.datasets[0].data = newData.values;
-                        chart.update();
-                        currentRange = range;
-                        const total = newData.values.reduce((sum, val) => sum + val, 0);
-                        document.getElementById('totalRevenueDisplay').textContent = 'Total: RM ' + total.toFixed(2);
-                    }
+                })
+                .catch(err => {
+                    console.error(err);
+                    alert('Network error, please try again.');
                 });
-            });
-        }
+            }
+        });
+
+        progressSection.addEventListener('keypress', function(e) {
+            const textarea = e.target.closest('.step-notes');
+            if (!textarea) return;
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                const notes = textarea.value.trim();
+                if (!notes) return;
+                const qtnId = textarea.dataset.qtnId;
+                const stepName = textarea.dataset.step;
+                const staffId = textarea.dataset.staffId;
+                if (!qtnId || !stepName) return;
+
+                fetch('', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: `action=add_step_note&qtn_id=${qtnId}&step_name=${encodeURIComponent(stepName)}&staff_id=${staffId}&note=${encodeURIComponent(notes)}`
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        textarea.value = '';
+                        location.reload();
+                    } else {
+                        alert('Failed to add note: ' + data.message);
+                    }
+                })
+                .catch(err => {
+                    console.error(err);
+                    alert('Network error, please try again.');
+                });
+            }
+        });
     });
     function editCustomer(id, name, email, phone, address, gender, race, selectedProductsJson) { 
         document.querySelector('#edit_customer_id').value = id; 
